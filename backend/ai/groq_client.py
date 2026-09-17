@@ -57,8 +57,47 @@ def clean_and_extract_json(raw_text: str) -> Dict[str, Any]:
 
     raise ValueError(f"Could not parse valid JSON from LLM response: {text[:200]}")
 
+def is_out_of_scope_query(requirement: str, retrieved_products: List[Dict[str, Any]]) -> bool:
+    """Detects if a query is completely unrelated to business software/solutions."""
+    req_lower = requirement.lower()
+    
+    # Common non-business query patterns
+    out_of_scope_keywords = [
+        "recipe", "cake", "cook", "weather", "joke", "poem", "song", "movie",
+        "who is", "what is the capital", "story", "riddle", "game", "how to bake",
+        "translate this", "write a code", "write a letter", "hello how are you"
+    ]
+    
+    for kw in out_of_scope_keywords:
+        if kw in req_lower:
+            return True
+            
+    # If all retrieved products scored negligible similarity and no business terms exist
+    max_score = max((p.get("score", 0.0) for p in retrieved_products), default=0.0)
+    business_indicators = ["support", "sales", "crm", "platform", "data", "customer", "team", "security", "workflow", "invoice", "fraud", "analytics", "software", "system", "automation", "company", "business", "service"]
+    has_business_intent = any(w in req_lower for w in business_indicators)
+    
+    if max_score <= 0.06 and not has_business_intent:
+        return True
+        
+    return False
+
 def build_fallback_analysis(requirement: str, retrieved_products: List[Dict[str, Any]]) -> LeadAnalysis:
-    """Intelligent grounded qualification generator when external API encounters rate limits or credit exhaustion."""
+    """Intelligent grounded qualification generator with out-of-scope filtering."""
+    if is_out_of_scope_query(requirement, retrieved_products):
+        return LeadAnalysis(
+            lead_summary="The provided inquiry is not a relevant enterprise customer requirement or sales lead. It appears to be an out-of-scope or general inquiry.",
+            relevant_products=[],
+            potential_customer_needs=["No relevant business software requirements identified."],
+            recommended_next_step="Request the prospect to provide specific business pain points, operational goals, or software solution requirements.",
+            follow_up_questions=[
+                "Could you describe the specific business process or software problem your team is looking to solve?",
+                "Which department (e.g., Sales, Support, Security, Operations) would this solution be for?"
+            ],
+            lead_score=0,
+            priority="Low"
+        )
+
     primary_prod = retrieved_products[0] if retrieved_products else {}
     prod_name = primary_prod.get("name", "Enterprise Solution Suite")
     category = primary_prod.get("category", "Enterprise Software")

@@ -87,3 +87,17 @@ def test_analyze_lead_with_mocked_groq():
         assert len(history_data) >= 1
         assert history_data[0]["id"] == data["lead_id"]
         assert history_data[0]["customer_requirement"] == req_text
+
+def test_out_of_scope_query_handling():
+    # Test that irrelevant queries (e.g. asking for recipes or general trivia) are rejected
+    from backend.ai.groq_client import build_fallback_analysis
+    from backend.retrieval.retriever import retrieve_relevant_products
+    
+    irrelevant_query = "What is the recipe for baking a chocolate cake?"
+    retrieved = retrieve_relevant_products(irrelevant_query, top_k=3)
+    analysis = build_fallback_analysis(irrelevant_query, retrieved)
+    
+    assert analysis.lead_score == 0
+    assert analysis.priority == "Low"
+    assert len(analysis.relevant_products) == 0
+    assert "not a relevant enterprise customer requirement" in analysis.lead_summary
